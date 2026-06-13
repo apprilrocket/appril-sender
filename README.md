@@ -79,3 +79,41 @@ ya están configurados en AWS (no se tocan al deployar código).
 | `AWS_SECRET_ACCESS_KEY` | El secret de esa access key |
 
 Mientras no estén los secrets, el workflow fallará en el paso de credenciales (no rompe nada).
+
+## Por qué vive en AWS Lambda (y no en Supabase Edge Functions)
+
+Decisión consciente. El resto de Appril (notificaciones transaccionales) corre como
+Edge Functions de Supabase con pg_cron + triggers, lo cual es más simple y *event-driven*.
+El sender se queda en Lambda **a propósito** porque su caso de uso es distinto — **outreach
+de ventas en masa**, donde lo que importa es:
+
+- **Tracking de deliverability (SES + SNS):** el webhook recibe eventos de SES (delivery,
+  open, click, bounce, complaint) y de WhatsApp, y los escribe en `lead_events`. Migrarlo a
+  SMTP/Supabase perdería ese pipeline, que es el corazón del CRM.
+- **Escala de envíos masivos** sin competir con las cuotas/tiempos de las Edge Functions.
+
+Regla mental: **transaccional e inmediato → Supabase-native; masivo y medible → Lambda.**
+
+### Endurecimientos opcionales (no aplicados, solo registrados)
+
+1. **Acotar la llave de Supabase:** en vez del `service_role` completo en AWS, usar una
+   clave/rol con permisos limitados solo a las tablas que el sender toca (`message_queue`,
+   `message_attempts`, `lead_events`, `leads_master`, `webhook_endpoints`). Reduce el riesgo
+   de tener la llave maestra en un segundo cloud.
+2. **Disparo por trigger (opcional):** un trigger en `message_queue` que invoque la Lambda al
+   insertar, además del cron, para envíos inmediatos. No hace falta para campañas.
+
+## Problemas de entrega conocidos (operación)
+
+- **`131049` "not delivered to maintain healthy ecosystem engagement":** límite de Meta para
+  plantillas **MARKETING** enviadas a usuarios que no han interactuado. El mensaje se envía
+  (hay `wa_message_id`) pero Meta no lo entrega. **No es un bug del sender.** Mitigación:
+  audiencias con opt-in, mejorar el quality rating del número, o usar plantillas UTILITY donde
+  aplique. Es una restricción inherente del outreach en frío por WhatsApp.
+- **`132000` "Number of parameters does not match":** el payload manda un número de variables
+  distinto al que la plantilla espera (config del CRM). Hay que alinear params ↔ plantilla.
+- **Bug del sender — mensajes atascados en `sending`:** el worker marca todo el lote como
+  `sending` antes de procesar y, si un envío falla por una vía que no actualiza el estado
+  final (o el Lambda se corta a mitad de lote), el mensaje queda en `sending` para siempre
+  (el query solo busca `pending`). Falta una recuperación de mensajes "stuck in sending"
+  (p.ej. re-encolar los `sending` con más de N minutos).
