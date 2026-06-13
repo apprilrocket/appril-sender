@@ -1,0 +1,49 @@
+name: Deploy Lambdas
+
+# Despliega el sender + webhook a AWS Lambda en cada push a main.
+# Requiere 2 secrets en el repo (Settings → Secrets and variables → Actions):
+#   AWS_ACCESS_KEY_ID      — de un IAM user con lambda:UpdateFunctionCode
+#   AWS_SECRET_ACCESS_KEY    (p.ej. el usuario appril-crm-deploy)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'build.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build bundles
+        run: npm run build
+
+      - name: Package
+        run: cd dist && zip -q -r ../lambda.zip sender.js webhook.js
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy appril-crm-sender
+        run: aws lambda update-function-code --function-name appril-crm-sender --zip-file fileb://lambda.zip
+
+      - name: Deploy appril-crm-webhook
+        run: aws lambda update-function-code --function-name appril-crm-webhook --zip-file fileb://lambda.zip

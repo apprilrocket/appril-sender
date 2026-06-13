@@ -66,3 +66,16 @@ npm run package && npm run deploy:webhook
 El `deploy` solo actualiza el **código**. Si cambian variables de entorno, hazlo con
 `aws lambda update-function-configuration` o en la consola. El cron y el API Gateway
 ya están configurados en AWS (no se tocan al deployar código).
+
+## Deploy automático (GitHub Actions)
+
+`.github/workflows/deploy.yml` compila y despliega ambas Lambdas en cada push a `main`
+(o manualmente desde la pestaña *Actions*). Requiere **2 secrets** en el repo
+(*Settings → Secrets and variables → Actions*):
+
+| Secret | Valor |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | Access key de un IAM user con `lambda:UpdateFunctionCode` (p.ej. `appril-crm-deploy`) |
+| `AWS_SECRET_ACCESS_KEY` | El secret de esa access key |
+
+Mientras no estén los secrets, el workflow fallará en el paso de credenciales (no rompe nada).
