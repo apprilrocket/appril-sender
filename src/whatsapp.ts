@@ -1,8 +1,6 @@
-export async function sendWhatsApp(args: {
-  to: string
-  template: any
-  payload: Record<string, any>
-}) {
+import type { Payload, SendArgs, SendResult } from './types'
+
+export async function sendWhatsApp(args: SendArgs): Promise<SendResult> {
   const phoneNumberId = process.env.WA_PHONE_NUMBER_ID
   const accessToken = process.env.WA_ACCESS_TOKEN
   const apiVersion = process.env.WA_API_VERSION ?? 'v21.0'
@@ -33,7 +31,10 @@ export async function sendWhatsApp(args: {
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const json: any = await res.json()
+    const json = (await res.json()) as {
+      messages?: { id?: string }[]
+      error?: { code?: number; message?: string }
+    }
     if (!res.ok) {
       return {
         ok: false,
@@ -41,23 +42,23 @@ export async function sendWhatsApp(args: {
         errorMessage: json?.error?.message ?? `HTTP ${res.status}`,
       }
     }
-    const messageId = json?.messages?.[0]?.id ?? ''
-    return { ok: true, messageId }
-  } catch (err: any) {
-    return { ok: false, errorCode: 'WA_NETWORK', errorMessage: err.message ?? String(err) }
+    return { ok: true, messageId: json?.messages?.[0]?.id ?? '' }
+  } catch (err) {
+    const e = err as { message?: string }
+    return { ok: false, errorCode: 'WA_NETWORK', errorMessage: e.message ?? String(err) }
   }
 }
 
-function buildSimpleBody(payload: Record<string, any>) {
+function buildSimpleBody(payload: Payload) {
   const parameters = Object.values(payload).map((v) => ({ type: 'text', text: String(v ?? '') }))
   if (parameters.length === 0) return []
   return [{ type: 'body', parameters }]
 }
 
-function injectPayload(components: any, payload: Record<string, any>) {
+function injectPayload(components: unknown, payload: Payload) {
   return JSON.parse(
-    JSON.stringify(components).replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
-      const value = key.split('.').reduce((acc: any, p: string) => acc?.[p], payload)
+    JSON.stringify(components).replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => {
+      const value = key.split('.').reduce<unknown>((acc, p) => (acc as any)?.[p], payload)
       return value !== undefined && value !== null ? String(value).replace(/"/g, '\\"') : ''
     }),
   )

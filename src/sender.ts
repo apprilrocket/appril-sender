@@ -1,15 +1,23 @@
+import type { ScheduledEvent } from 'aws-lambda'
 import { supabase } from './supabase'
 import { sendEmail } from './ses'
 import { sendWhatsApp } from './whatsapp'
+import type { MessageTemplate, QueuedMessage } from './types'
 
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE ?? '50')
 const MAX_ATTEMPTS = parseInt(process.env.MAX_ATTEMPTS ?? '3')
 
+interface SenderSummary {
+  processed: number
+  ok: number
+  failed: number
+}
+
 /** Lambda `appril-crm-sender` — disparada por EventBridge cada 2 min (rate(2 minutes)). */
-export async function handler(_event: any) {
+export async function handler(_event: ScheduledEvent): Promise<SenderSummary> {
   const sb = supabase()
   const startedAt = Date.now()
-  const { data: pending, error: fetchErr } = await sb
+  const { data, error: fetchErr } = await sb
     .from('message_queue')
     .select('id, workspace_id, lead_id, template_key, channel, to_address, payload, attempts')
     .eq('status', 'pending')
@@ -17,19 +25,21 @@ export async function handler(_event: any) {
     .order('scheduled_at')
     .limit(BATCH_SIZE)
   if (fetchErr) throw new Error(`Fetch queue failed: ${fetchErr.message}`)
-  if (!pending || pending.length === 0) {
+  const pending = (data ?? []) as QueuedMessage[]
+  if (pending.length === 0) {
     console.log(`[${new Date().toISOString()}] sender: nothing to send`)
     return { processed: 0, ok: 0, failed: 0 }
   }
   console.log(`[${new Date().toISOString()}] sender: ${pending.length} mensajes a procesar`)
   const templateKeys = Array.from(new Set(pending.map((p) => p.template_key)))
-  const { data: templates } = await sb
+  const { data: tplData } = await sb
     .from('message_templates')
     .select(
       'template_key, channel, subject, html_body, text_body, wa_template_name, wa_language, wa_components, variables',
     )
     .in('template_key', templateKeys)
-  const tplByKey = new Map((templates ?? []).map((t) => [t.template_key, t]))
+  const templates = (tplData ?? []) as MessageTemplate[]
+  const tplByKey = new Map<string, MessageTemplate>(templates.map((t) => [t.template_key, t]))
   const ids = pending.map((p) => p.id)
   await sb.from('message_queue').update({ status: 'sending' }).in('id', ids)
   let ok = 0
@@ -101,7 +111,7 @@ export async function handler(_event: any) {
   return { processed: pending.length, ok, failed }
 }
 
-async function markFailed(msg: any, code: string, message: string) {
+async function markFailed(msg: QueuedMessage, code: string, message: string): Promise<void> {
   const sb = supabase()
   await sb.from('message_queue').update({ status: 'failed', last_error: `${code}: ${message}` }).eq('id', msg.id)
   await sb.from('message_attempts').insert({

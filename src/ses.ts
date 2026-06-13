@@ -1,5 +1,6 @@
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses'
 import { renderTemplate } from './templates'
+import type { SendArgs, SendResult } from './types'
 
 let _ses: SESClient | null = null
 
@@ -9,11 +10,7 @@ function ses(): SESClient {
   return _ses
 }
 
-export async function sendEmail(args: {
-  to: string
-  template: any
-  payload: Record<string, any>
-}) {
+export async function sendEmail(args: SendArgs): Promise<SendResult> {
   const from = process.env.SES_FROM_EMAIL
   const replyTo = process.env.SES_REPLY_TO
   const configSet = process.env.SES_CONFIGURATION_SET
@@ -41,7 +38,8 @@ export async function sendEmail(args: {
       }),
     )
     return { ok: true, messageId: result.MessageId ?? '' }
-  } catch (err: any) {
-    return { ok: false, errorCode: err.name ?? 'SES_ERROR', errorMessage: err.message ?? String(err) }
+  } catch (err) {
+    const e = err as { name?: string; message?: string }
+    return { ok: false, errorCode: e.name ?? 'SES_ERROR', errorMessage: e.message ?? String(err) }
   }
 }

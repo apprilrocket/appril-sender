@@ -1,22 +1,24 @@
 import crypto from 'crypto'
+import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
 import { supabase } from './supabase'
 
 /** Lambda `appril-crm-webhook` — detrás de API Gateway (HTTP API v2). Recibe webhooks
  *  de SES (vía SNS), WhatsApp Cloud API y endpoints externos. */
-export async function handler(event: any) {
+export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   const path = event.rawPath ?? '/'
   try {
     if (path.startsWith('/webhook/ses')) return await handleSes(event)
     if (path.startsWith('/webhook/whatsapp')) return await handleWhatsApp(event)
     if (path.startsWith('/webhook/external')) return await handleExternalEvent(event)
     return { statusCode: 404, body: 'Not found' }
-  } catch (err: any) {
+  } catch (err) {
+    const e = err as { message?: string }
     console.error('webhook error:', err)
-    return { statusCode: 500, body: `Internal error: ${err.message}` }
+    return { statusCode: 500, body: `Internal error: ${e.message}` }
   }
 }
 
-async function handleSes(event: any) {
+async function handleSes(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   const body = JSON.parse(event.body ?? '{}')
   if (body.Type === 'SubscriptionConfirmation') {
     console.log('SNS subscription confirm URL:', body.SubscribeURL)
@@ -30,8 +32,8 @@ async function handleSes(event: any) {
   }
   if (body.Type !== 'Notification') return { statusCode: 200, body: 'ignored' }
   const message = JSON.parse(body.Message)
-  const eventType = message.eventType ?? message.notificationType
-  const sesMessageId = message.mail?.messageId
+  const eventType: string = message.eventType ?? message.notificationType
+  const sesMessageId: string | undefined = message.mail?.messageId
   if (!sesMessageId) return { statusCode: 200, body: 'no messageId' }
   const sb = supabase()
   const { data: queue } = await sb
@@ -69,7 +71,7 @@ async function handleSes(event: any) {
   return { statusCode: 200, body: 'ok' }
 }
 
-async function handleWhatsApp(event: any) {
+async function handleWhatsApp(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   if (event.requestContext.http.method === 'GET') {
     const qs = event.queryStringParameters ?? {}
     if (qs['hub.verify_token'] === process.env.WA_VERIFY_TOKEN) {
@@ -111,7 +113,7 @@ async function handleWhatsApp(event: any) {
         }
       }
       for (const m of value.messages ?? []) {
-        const fromPhone = m.from
+        const fromPhone: string = m.from
         const { data: lead } = await sb
           .from('leads_master')
           .select('id, workspace_id')
@@ -135,7 +137,7 @@ async function handleWhatsApp(event: any) {
   return { statusCode: 200, body: 'ok' }
 }
 
-async function handleExternalEvent(event: any) {
+async function handleExternalEvent(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   const token = event.queryStringParameters?.token
   if (!token) return { statusCode: 401, body: 'missing token' }
   const sb = supabase()
