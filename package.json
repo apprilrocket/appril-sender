@@ -1,0 +1,23 @@
+{
+  "name": "appril-sender",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sender + Webhook Lambdas del CRM de Appril (cola message_queue → SES / WhatsApp Cloud API).",
+  "scripts": {
+    "build": "node build.mjs",
+    "package": "cd dist && zip -q -r ../lambda.zip sender.js webhook.js && cd ..",
+    "deploy:sender": "aws lambda update-function-code --function-name appril-crm-sender --zip-file fileb://lambda.zip --region us-east-1",
+    "deploy:webhook": "aws lambda update-function-code --function-name appril-crm-webhook --zip-file fileb://lambda.zip --region us-east-1",
+    "deploy": "npm run build && npm run package && npm run deploy:sender && npm run deploy:webhook"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.89.0"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-ses": "^3.717.0",
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}
