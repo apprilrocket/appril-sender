@@ -17,6 +17,14 @@ interface SenderSummary {
 export async function handler(_event: ScheduledEvent): Promise<SenderSummary> {
   const sb = supabase()
   const startedAt = Date.now()
+
+  // Recuperación de huérfanos: mensajes que quedaron en 'sending' de un run anterior
+  // que no se finalizó (timeout/crash a mitad de lote). Los runs del cron son
+  // secuenciales (timeout 60s < intervalo 120s), así que cualquier 'sending' al inicio
+  // de este run está atascado. Se re-encola (o se marca failed si agotó intentos),
+  // evitando que queden huérfanos para siempre (el query principal solo ve 'pending').
+  await recoverStuckSending(sb)
+
   const { data, error: fetchErr } = await sb
     .from('message_queue')
     .select('id, workspace_id, lead_id, template_key, channel, to_address, payload, attempts')
@@ -109,6 +117,25 @@ export async function handler(_event: ScheduledEvent): Promise<SenderSummary> {
     `[${new Date().toISOString()}] sender: done in ${Date.now() - startedAt}ms — ok=${ok} failed=${failed}`,
   )
   return { processed: pending.length, ok, failed }
+}
+
+/** Re-encola mensajes huérfanos en 'sending'; los que ya agotaron intentos → 'failed'. */
+async function recoverStuckSending(sb: ReturnType<typeof supabase>): Promise<void> {
+  const { data } = await sb.from('message_queue').select('id, attempts').eq('status', 'sending')
+  const stuck = (data ?? []) as { id: string; attempts: number | null }[]
+  if (stuck.length === 0) return
+  console.log(`[${new Date().toISOString()}] sender: recuperando ${stuck.length} mensaje(s) huérfano(s) en 'sending'`)
+  for (const m of stuck) {
+    const exhausted = (m.attempts ?? 0) >= MAX_ATTEMPTS
+    await sb
+      .from('message_queue')
+      .update(
+        exhausted
+          ? { status: 'failed', last_error: 'STUCK_SENDING: huérfano en sending, intentos agotados' }
+          : { status: 'pending', scheduled_at: new Date().toISOString() },
+      )
+      .eq('id', m.id)
+  }
 }
 
 async function markFailed(msg: QueuedMessage, code: string, message: string): Promise<void> {
