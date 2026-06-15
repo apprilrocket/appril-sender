@@ -8,7 +8,8 @@
     "package": "cd dist && zip -q -r ../lambda.zip sender.js webhook.js && cd ..",
     "deploy:sender": "aws lambda update-function-code --function-name appril-crm-sender --zip-file fileb://lambda.zip --region us-east-1",
     "deploy:webhook": "aws lambda update-function-code --function-name appril-crm-webhook --zip-file fileb://lambda.zip --region us-east-1",
-    "deploy": "npm run build && npm run package && npm run deploy:sender && npm run deploy:webhook"
+    "deploy": "npm run build && npm run package && npm run deploy:sender && npm run deploy:webhook",
+    "run:sender:local": "tsx src/sender.local.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0"
@@ -17,7 +18,9 @@
     "@aws-sdk/client-ses": "^3.717.0",
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^22.10.0",
+    "dotenv": "^16.4.5",
     "esbuild": "^0.24.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.0"
   }
 }
