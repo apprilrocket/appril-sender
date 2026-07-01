@@ -38,7 +38,7 @@ async function handleSes(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
   const sb = supabase()
   const { data: queue } = await sb
     .from('message_queue')
-    .select('id, workspace_id, lead_id')
+    .select('id, workspace_id, lead_id, campaign_id, template_key')
     .eq('ses_message_id', sesMessageId)
     .maybeSingle()
   if (!queue) {
@@ -60,7 +60,8 @@ async function handleSes(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
     event_type: internalType,
     event_channel: 'email',
     event_value: eventType,
-    metadata: message,
+    // Atribución: campaign_id + template_key junto al payload SES.
+    metadata: { ...message, campaign_id: queue.campaign_id ?? null, template_key: queue.template_key ?? null },
   })
   if (eventType === 'Open') await sb.from('leads_master').update({ opened_email: true }).eq('id', queue.lead_id)
   if (eventType === 'Click') await sb.from('leads_master').update({ clicked_email: true }).eq('id', queue.lead_id)

@@ -27,6 +27,7 @@ export interface QueuedMessage {
   id: string
   workspace_id: string
   lead_id: string | null
+  campaign_id: string | null
   template_key: string
   channel: Channel
   to_address: string
