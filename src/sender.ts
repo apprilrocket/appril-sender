@@ -27,7 +27,7 @@ export async function handler(_event: ScheduledEvent): Promise<SenderSummary> {
 
   const { data, error: fetchErr } = await sb
     .from('message_queue')
-    .select('id, workspace_id, lead_id, template_key, channel, to_address, payload, attempts')
+    .select('id, workspace_id, lead_id, campaign_id, template_key, channel, to_address, payload, attempts')
     .eq('status', 'pending')
     .lte('scheduled_at', new Date().toISOString())
     .order('scheduled_at')
@@ -92,7 +92,8 @@ export async function handler(_event: ScheduledEvent): Promise<SenderSummary> {
         event_type: 'message_sent',
         event_channel: msg.channel,
         event_value: msg.template_key,
-        metadata: { message_id: msg.id, external_id: result.messageId },
+        // Atribución: campaign_id + template_key explícitos (además del join por message_id).
+        metadata: { message_id: msg.id, external_id: result.messageId, campaign_id: msg.campaign_id ?? null, template_key: msg.template_key },
       })
       await sb
         .from('leads_master')
